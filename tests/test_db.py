@@ -157,11 +157,14 @@ async def test_group_card_mentions_and_buttons(env):
         id=0, title="Дейли", kind=Kind.RECURRING, tz=MSK, start_date=s.date().isoformat(),
         start_time=s.strftime("%H:%M"), duration_min=15, organizer_id=1, weekdays=list(range(7)), reminders=[10]))
     occ = (await svc.db.occurrences(s.timestamp() - 1, s.timestamp() + 3600))[0]
-    text, kb = await svc.render(occ, -100)
+    from bot.render import card_header, reminder_header
+    text, kb = await svc.render(occ, -100, reminder_header(10))
     assert text.splitlines()[-1].startswith("📣 @all")
     assert [[b.text for b in row] for row in kb.inline_keyboard] == [["⏰ Опоздаю", "🕑 Перенести"]]
+    _, new_kb = await svc.render(occ, -100, card_header("🆕", "новый ивент"))   # «Опоздаю» — только в напоминании
+    assert [[b.text for b in row] for row in new_kb.inline_keyboard] == [["🕑 Перенести"]]
     _, dm_kb = await svc.render(occ, 1)                       # в личке ещё и «Изменить»
-    assert [[b.text for b in row] for row in dm_kb.inline_keyboard][-1] == ["✏️ Изменить"]
+    assert [[b.text for b in row] for row in dm_kb.inline_keyboard] == [["🕑 Перенести"], ["✏️ Изменить"]]
 
 
 async def test_old_database_still_works(tmp_path):

@@ -126,13 +126,12 @@ async def _flow(db):
     group_card = texts_to(-100)[-1]
     assert "📣 @all" in group_card and 'tg://user?id=1"' in group_card and 'tg://user?id=2"' in group_card
     group_btns = [b.callback_data for row in find_kb(-100).inline_keyboard for b in row if b.callback_data]
-    assert [d.split(":")[0] + ":" + d.split(":")[1] for d in group_btns] == ["r:1", "ev:move"]
+    assert [d.split(":")[0] + ":" + d.split(":")[1] for d in group_btns] == ["ev:move"]   # у нового ивента «Опоздаю» нет
     assert not any("новый ивент" in t for t in texts_to(1) + texts_to(2))   # в личку — только подтверждение
     assert any("Ивент создан" in t for t in texts_to(1))
 
     # RSVP из группы
-    r = find_btn("r:1:")
-    key = r.split(":")[2]
+    key = find_btn("ev:move:1:").split(":")[3]
     await F(cb(2, f"r:1:{key}:late", chat=-100))
     assert await db.rsvps(1, int(key)) == {2: Answer(Rsvp.LATE)}
     await F(cb(1, f"r:1:{key}:office", chat=-100))              # старая кнопка — ничего не меняет
@@ -146,7 +145,7 @@ async def _flow(db):
     daily_card = texts_to(-100)[-1]
     assert daily_card.startswith("🆕 <b>Дейли</b> · новый ивент") and "Будут" not in daily_card
     daily_btns = [b.callback_data for row in find_kb(-100).inline_keyboard for b in row if b.callback_data]
-    assert daily_btns[0].endswith(":late") and daily_btns[1].startswith("ev:move")
+    assert len(daily_btns) == 1 and daily_btns[0].startswith("ev:move")
 
     # разовый, пересекающийся с дейли -> предупреждение
     await F(msg(1, "/new Синк | пн 10:05 | 30м | все"))

@@ -71,6 +71,11 @@ def is_start(header: str) -> bool:
     return header.startswith("🚀|")
 
 
+def is_reminder(header: str) -> bool:
+    """Напоминание заранее («⏰ … · через 10 мин») — только под ним есть «Опоздаю»."""
+    return header.startswith("⏰|")
+
+
 def card_text(
     occ: Occurrence,
     viewer_tz: str,
@@ -112,14 +117,16 @@ def mentions(people: list[User], everyone: bool) -> str:
 
 def card_keyboard(occ: Occurrence, header: str = "", finished: bool = False, manage: bool = True) -> InlineKeyboardMarkup | None:
     """Напоминание: «Опоздаю» и «Перенести» (перенос продолжается в личке с ботом).
-    Сообщение о начале и прошедшие ивенты — без кнопок. «Изменить» — только в личке (manage)."""
+    Новый ивент и прочие карточки — только «Перенести». Начало и прошедшие ивенты — без кнопок.
+    «Изменить» — только в личке (manage)."""
     if finished or is_start(header):
         return None
     ev = occ.event
-    rows = [[
-        Btn(text=LATE_LABEL, callback_data=RsvpCb(e=ev.id, k=occ.key, s=Rsvp.LATE.value).pack()),
-        Btn(text="🕑 Перенести", callback_data=EvCb(a="move", e=ev.id, k=occ.key).pack()),
-    ]]
+    move = Btn(text="🕑 Перенести", callback_data=EvCb(a="move", e=ev.id, k=occ.key).pack())
+    if is_reminder(header):
+        rows = [[Btn(text=LATE_LABEL, callback_data=RsvpCb(e=ev.id, k=occ.key, s=Rsvp.LATE.value).pack()), move]]
+    else:
+        rows = [[move]]
     if manage:
         rows.append([Btn(text="✏️ Изменить", callback_data=EvCb(a="edit", e=ev.id, k=occ.key).pack())])
     return InlineKeyboardMarkup(inline_keyboard=rows)
