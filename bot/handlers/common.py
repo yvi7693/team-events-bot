@@ -71,6 +71,26 @@ async def chat_migrated(message: Message, svc: Service) -> None:
         await svc.db.set_setting("team_chat_id", str(message.migrate_to_chat_id))
 
 
+@group_router.message(F.new_chat_members)
+async def new_members(message: Message, svc: Service) -> None:
+    """Новые люди в командном чате: здороваемся и даём кнопку подключиться к боту.
+
+    Тех, кто уже нажимал «Старт», и ботов пропускаем. Бота самого себя приветствует membership_changed.
+    """
+    if await svc.db.team_chat_id() != message.chat.id:
+        return
+    newcomers = [u for u in message.new_chat_members if not u.is_bot and not await svc.db.get_user(u.id)]
+    if not newcomers:
+        return
+    names = ", ".join(f'<a href="tg://user?id={u.id}">{escape(u.first_name)}</a>' for u in newcomers)
+    await svc.safe_send(
+        message.chat.id,
+        f"👋 Привет, {names}! Я напоминаю здесь о встречах команды.\n\n"
+        "Нажми «Подключиться к боту» и выбери часовой пояс — тогда я буду отмечать тебя в напоминаниях.",
+        reply_markup=await deep_link_kb(message.bot, "join", "Подключиться к боту"),
+    )
+
+
 @group_router.my_chat_member(F.chat.type.in_({"group", "supergroup"}))
 async def membership_changed(update: ChatMemberUpdated, svc: Service) -> None:
     """Чат становится командным, когда бота добавляет участник команды; удалили — привязка снимается."""

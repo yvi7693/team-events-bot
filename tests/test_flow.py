@@ -92,6 +92,23 @@ async def _flow(db):
     # участник команды добавил бота — чат стал командным, команды в нём не работают
     await F(added_to_group(1))
     assert await db.team_chat_id() == -100
+    # новые люди в чате: приветствие с кнопкой — только тем, кто ещё не нажимал «Старт»
+    def joined(members, chat=-100):
+        return Update(update_id=next(uid_c), message=Message(
+            message_id=next(mid), date=dt.datetime.now(), chat=Chat(id=chat, type="supergroup"), from_user=tg(1),
+            new_chat_members=members))
+    newbie = TgUser(id=3, is_bot=False, first_name="Ира")
+    other_bot = TgUser(id=99, is_bot=True, first_name="SomeBot")
+    await F(joined([newbie, tg(1), other_bot]))
+    hello = [m for m in LOG if isinstance(m, SendMessage) and m.chat_id == -100][-1]
+    assert "Привет" in hello.text and 'tg://user?id=3">Ира' in hello.text
+    assert "id=1" not in hello.text and "SomeBot" not in hello.text           # подключённых и ботов не зовём
+    assert hello.reply_markup.inline_keyboard[0][0].url == "https://t.me/team_bot?start=join"
+    sent = len(texts_to(-100))
+    await F(joined([tg(2)]))                                                 # уже нажимал «Старт» — тишина
+    await F(joined([newbie], chat=-555))                                     # чужая группа — тишина
+    assert len(texts_to(-100)) == sent and texts_to(-555) == []
+
     sent_before = len(texts_to(-100))
     for command in ("/start", "/help", "/new", "/week", "/events", "/team", "/bind", "/calendar"):
         await F(msg(1, command, chat=-100))
