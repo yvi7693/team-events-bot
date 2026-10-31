@@ -8,7 +8,7 @@ import pytest
 
 from bot import scheduler
 from bot.db import Database
-from bot.models import Answer, Event, Kind, Mode, Place, Rsvp
+from bot.models import Answer, Event, Kind, Rsvp
 from bot.service import Service
 
 MSK = "Europe/Moscow"
@@ -44,7 +44,6 @@ async def env(tmp_path):
     await db.upsert_user(1, "Аня", "anna", MSK)
     await db.upsert_user(2, "Олег", "oleg", "Europe/Berlin")
     await db.upsert_user(3, "Ира", "ira", MSK)
-    await db.update_user(2, mode=Mode.REMOTE.value)
     await db.set_setting("team_chat_id", "-100")
     yield svc, bot
     await db.close()
@@ -80,10 +79,11 @@ async def test_reminder_card_structure(env):
     await svc.db.save_event(ev)
     await scheduler.tick(svc)
     lines = bot.to(-100)[0].split("\n")
-    # ⏰ Демо · через N мин / сегодня, 12:10–12:25 / пусто / Повестка / тест / пусто / отметки
+    # ⏰ Демо · через N мин / сегодня, 12:10–12:25 / пусто / Повестка / тест / пусто / ссылка / пусто / отметки
     assert lines[0].startswith("⏰ <b>Демо</b> · через ")
     assert lines[1].split(",")[0] in ("сегодня", "завтра") and "–" in lines[1]
-    assert lines[2:5] == ["", "<b>Повестка</b>", "тест"] and lines[6].startswith("📣 ")
+    assert lines[2:5] == ["", "<b>Повестка</b>", "тест"]
+    assert lines[6] == '🔗 <a href="https://meet/x">Подключиться к звонку</a>' and lines[8].startswith("📣 ")
     rows = [[b.text for b in row] for row in bot.sent[-1][2].inline_keyboard]
     assert rows == [["⏰ Опоздаю", "🕑 Перенести"]]
 
@@ -94,12 +94,9 @@ async def test_start_message_has_no_buttons_and_text_link(env):
     ev = await make_single(svc, 120)
     occ = (await svc.db.occurrences(0, 2**40))[0]
     text, kb = await svc.render(occ, -100, reminder_header(0))
-    assert kb is None and "Подключиться" not in text        # все в офисе — ссылки нет
-    await svc.db.set_answer(ev.id, occ.key, 3, Answer(Rsvp.LATE, Place.ONLINE))
-    text, kb = await svc.render(occ, -100, reminder_header(0))
-    assert kb is None and 'href="https://meet/x"' in text   # кто-то онлайн — ссылка текстом
-    text, _ = await svc.render(occ, -100, card_header("⏰", "через 10 мин"))
-    assert "meet/x" not in text                              # в обычном напоминании ссылки нет
+    assert kb is None and 'href="https://meet/x"' in text   # в начале — без кнопок, ссылка текстом
+    text, kb = await svc.render(occ, -100, card_header("⏰", "через 10 мин"))
+    assert 'href="https://meet/x"' in text and kb is not None   # и в обычном напоминании — ссылкой в тексте
 
 
 async def test_move_single_keeps_rsvp_and_resends_reminders(env):
@@ -167,40 +164,33 @@ async def test_group_card_mentions_and_buttons(env):
     assert [[b.text for b in row] for row in dm_kb.inline_keyboard][-1] == ["✏️ Изменить"]
 
 
-async def test_online_only_persisted_and_migrated(tmp_path):
+async def test_old_database_still_works(tmp_path):
+    """База прежней версии: лишние колонки (mode, online_only, place) и старые ответы «в офисе / онлайн»."""
     import aiosqlite
     path = str(tmp_path / "old.sqlite3")
-    # база «старой версии» без колонки online_only
     async with aiosqlite.connect(path) as c:
+        await c.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, username TEXT, tz TEXT NOT NULL, "
+                        "mode TEXT NOT NULL DEFAULT 'office', active INTEGER NOT NULL DEFAULT 1)")
         await c.execute("CREATE TABLE events (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, kind TEXT NOT NULL, "
                         "tz TEXT NOT NULL, start_date TEXT NOT NULL, start_time TEXT NOT NULL, duration_min INTEGER NOT NULL, "
                         "organizer_id INTEGER NOT NULL, weekdays TEXT NOT NULL DEFAULT '[]', interval_weeks INTEGER NOT NULL DEFAULT 1, "
                         "until_date TEXT, call_url TEXT, agenda TEXT, reminders TEXT NOT NULL DEFAULT '[]', "
-                        "deleted INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)")
-        await c.commit()
-    db = Database(path)
-    await db.connect()
-    try:
-        ev = await db.create_event(Event(id=0, title="X", kind=Kind.SINGLE, tz=MSK, start_date="2030-01-01",
-                                         start_time="10:00", duration_min=30, organizer_id=1, online_only=True))
-        assert (await db.get_event(ev.id)).online_only
-    finally:
-        await db.close()
-
-
-async def test_old_office_online_answers_migrated(tmp_path):
-    import aiosqlite
-    path = str(tmp_path / "old2.sqlite3")
-    async with aiosqlite.connect(path) as c:
+                        "online_only INTEGER NOT NULL DEFAULT 0, deleted INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL)")
         await c.execute("CREATE TABLE rsvps (event_id INTEGER NOT NULL, occ_key INTEGER NOT NULL, user_id INTEGER NOT NULL, "
-                        "status TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (event_id, occ_key, user_id))")
-        await c.executemany("INSERT INTO rsvps VALUES (1, 100, ?, ?, 0)", [(1, "office"), (2, "online"), (3, "late")])
+                        "status TEXT NOT NULL, place TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (event_id, occ_key, user_id))")
+        await c.executemany("INSERT INTO rsvps VALUES (1, 100, ?, ?, NULL, 0)", [(1, "office"), (2, "online"), (3, "late")])
         await c.commit()
     db = Database(path)
     await db.connect()
     try:
-        assert await db.rsvps(1, 100) == {
-            1: Answer(Rsvp.YES, Place.OFFICE), 2: Answer(Rsvp.YES, Place.ONLINE), 3: Answer(Rsvp.LATE)}
+        u = await db.upsert_user(5, "Петя", None, MSK)
+        assert u.name == "Петя"
+        ev = await db.create_event(Event(id=0, title="X", kind=Kind.SINGLE, tz=MSK, start_date="2030-01-01",
+                                         start_time="10:00", duration_min=30, organizer_id=5))
+        assert (await db.get_event(ev.id)).title == "X"
+        assert await db.rsvps(1, 100) == {3: Answer(Rsvp.LATE)}          # старые «офис / онлайн» пропускаются
+        await db.set_answer(1, 100, 1, Answer(Rsvp.LATE))
+        assert (await db.rsvps(1, 100))[1] == Answer(Rsvp.LATE)
     finally:
         await db.close()
 

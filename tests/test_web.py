@@ -7,11 +7,10 @@ from urllib.parse import urlencode
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
-from bot.models import Answer, Place, Rsvp
+from bot.models import Answer, Rsvp
 from bot.web import WebServer
 from tests.test_db import MSK, FakeBot, make_single, start_in  # noqa: F401  (env-фикстура ниже)
 from bot.db import Database
-from bot.models import Mode
 from bot.service import Service
 
 TOKEN = "123456:TEST-token"
@@ -35,7 +34,6 @@ async def client(tmp_path):
     await db.upsert_user(1, "Аня", "anna", MSK)
     await db.upsert_user(2, "Олег", "oleg", "Europe/Berlin")
     await db.upsert_user(3, "Ира", "ira", MSK)
-    await db.update_user(2, mode=Mode.REMOTE.value)
     web = WebServer(svc, TOKEN, "https://cal.example.com/")
     c = TestClient(TestServer(web.app))
     await c.start_server()
@@ -68,7 +66,7 @@ async def test_events_scope_and_rsvp(client):
     assert len(team["events"]) == 1 and team["events"][0]["mine"] is False and "late" in team["events"][0]
 
     e = (await (await client.get(q, headers=hdr(3))).json())["events"][0]
-    assert e["url"] is None                                       # все в офисе — ссылку не показываем
+    assert e["url"] == "https://meet/x"
     r = await client.post("/api/rsvp", headers=hdr(3), json={"e": e["e"], "k": e["k"], "s": "late"})
     upd = await r.json()
     assert upd["late"] is True and upd["lateNames"] == ["Ира"]
@@ -77,7 +75,7 @@ async def test_events_scope_and_rsvp(client):
     assert again["late"] is False                                 # повторное нажатие отменяет
     await client.svc.wait_background()                            # карточки обновляются в фоне
 
-    # чужой ивент и прежние кнопки «буду / офис» больше не принимаются
+    # чужой ивент и прежние кнопки («онлайн» и т.п.) больше не принимаются
     assert (await client.post("/api/rsvp", headers=hdr(2), json={"e": e["e"], "k": e["k"], "s": "late"})).status == 403
     assert (await client.post("/api/rsvp", headers=hdr(3), json={"e": e["e"], "k": e["k"], "s": "online"})).status == 400
 

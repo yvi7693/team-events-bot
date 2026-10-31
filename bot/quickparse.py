@@ -8,7 +8,6 @@
     /new Дейли | 10:00 | 15м | по будням | https://meet.google.com/abc
     /new Ретро | пт 16:00 | 1ч | каждые 2 недели | Что улучшить в процессе
     /new Демо заказчику | 05.11 14:00 | 45м | @anna @oleg | https://zoom.us/j/1 | Показ MVP
-    /new Синк с подрядчиком | чт 12:00 | 30м | онлайн | https://meet.google.com/x
 """
 
 from __future__ import annotations
@@ -33,7 +32,6 @@ class Draft:
     everyone: bool = False
     call_url: str | None = None
     agenda: str | None = None
-    online: bool = False
 
 
 class ParseError(ValueError):
@@ -92,8 +90,6 @@ def parse_line(text: str, tz: str, now: datetime | None = None) -> Draft:
         elif (rec := parse_recurrence(p)) is not None:
             d.recurring = True
             d.weekdays, d.interval_weeks = rec
-        elif p.lower() in ("онлайн", "только онлайн", "online", "удалённо", "удаленно"):
-            d.online = True
         elif p.lower() in ("все", "вся команда"):
             d.everyone = True
         elif p.startswith("@"):

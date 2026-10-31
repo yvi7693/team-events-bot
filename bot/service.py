@@ -16,7 +16,7 @@ from . import logic
 from .db import Database
 from .models import Event, Occurrence, Rsvp, User
 from .recurrence import expand
-from .render import card_keyboard, card_text, is_start, mentions
+from .render import card_keyboard, card_text, mentions
 from .timeutil import fmt_dt, from_ts, now_ts
 
 log = logging.getLogger(__name__)
@@ -52,9 +52,7 @@ class Service:
         rsvps = await self.db.rsvps(occ.event.id, occ.key)
         other_tzs = sorted({u.tz for u in people} | {occ.event.tz})
         late = [u for u in people if (a := rsvps.get(u.id)) and a.status == Rsvp.LATE]
-        # ссылка на звонок — текстом и только в сообщении о начале, когда кто-то онлайн
-        url = occ.event.call_url if is_start(header) and logic.show_link(occ.event, people, rsvps) else None
-        text = card_text(occ, await self.viewer_tz(chat_id), other_tzs, now_ts(), header, late, url)
+        text = card_text(occ, await self.viewer_tz(chat_id), other_tzs, now_ts(), header, late, occ.event.call_url)
         in_group = chat_id < 0
         if in_group:
             # отметки ставим в каждой карточке чата; при правке сообщения Telegram повторно не уведомляет

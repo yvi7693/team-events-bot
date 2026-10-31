@@ -82,10 +82,10 @@ class WebServer:
         return {
             "e": ev.id, "k": occ.key, "title": ev.title,
             "start": occ.start, "end": occ.end, "moved": occ.moved,
-            "recurring": ev.is_recurring, "online": ev.online_only,
+            "recurring": ev.is_recurring,
             "repeat": describe(ev), "duration": fmt_duration(ev.duration_min),
             "agenda": ev.agenda,
-            "url": ev.call_url if ev.call_url and logic.show_link(ev, people, answers) else None,
+            "url": ev.call_url,
             "organizer": organizer.name if organizer else None,
             "mine": mine,
             "late": bool(my and my.status == Rsvp.LATE),

@@ -234,8 +234,7 @@ def edit_menu(ev: Event, key: int, user: User) -> InlineKeyboardMarkup:
 
     rows = [[b("Название", "title"), b("Длительность", "duration")],
             [b("Ссылка", "link"), b("Повестка", "agenda")],
-            [b("Напоминания", "reminders"), b("Формат", "format")],
-            [b("🕑 Перенести", "move")]]
+            [b("Напоминания", "reminders"), b("🕑 Перенести", "move")]]
     rows.append([b("Дни повтора", "days")] if ev.is_recurring else [b("Участники", "participants")])
     if logic.can_delete(ev, user.id):
         if ev.is_recurring:
@@ -296,7 +295,7 @@ async def on_edit_field(cq: CallbackQuery, callback_data: EdCb, state: FSMContex
 
 FIELD_NAMES = {
     "title": "название", "duration": "длительность", "days": "дни повтора", "participants": "участники",
-    "link": "ссылка на звонок", "agenda": "повестка", "reminders": "напоминания", "format": "формат",
+    "link": "ссылка на звонок", "agenda": "повестка", "reminders": "напоминания",
 }
 
 
@@ -331,7 +330,6 @@ async def apply_edit(chat: int, field: str, state: FSMContext, svc: Service) -> 
         "link": escape(ev.call_url or "—"),
         "agenda": escape(ev.agenda or "—"),
         "reminders": ", ".join(fmt_offset(m) for m in ev.reminders) or "только в момент начала",
-        "format": "только онлайн" if ev.online_only else "офис + онлайн",
     }[field]
     if field != "reminders":  # настройка напоминаний никого кроме бота не касается
         await svc.announce(

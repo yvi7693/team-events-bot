@@ -196,7 +196,6 @@ function eventHtml(ev) {
   const open = S.open === id;
   const chips = [];
   if (ev.recurring) chips.push(`<span class="chip">🔁 ${esc(ev.repeat)}</span>`);
-  if (ev.online) chips.push(`<span class="chip">💻 онлайн</span>`);
   if (ev.moved) chips.push(`<span class="chip">↪️ перенесён</span>`);
   if (ev.late) chips.push(`<span class="chip me">⏰ опоздаю</span>`);
 

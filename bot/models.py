@@ -11,27 +11,15 @@ class Kind(StrEnum):
     SINGLE = "single"        # разовый
 
 
-class Mode(StrEnum):
-    OFFICE = "office"
-    REMOTE = "remote"
-
-
 class Rsvp(StrEnum):
     YES = "yes"         # буду
     LATE = "late"       # опоздаю
     NO = "no"           # не буду
 
 
-class Place(StrEnum):
-    """Где человек будет в этот раз (только для ивентов «офис + онлайн»)."""
-    OFFICE = "office"
-    ONLINE = "online"
-
-
 @dataclass(frozen=True)
 class Answer:
     status: Rsvp
-    place: Place | None = None  # None — как в профиле
 
 
 
@@ -41,7 +29,6 @@ class User:
     name: str
     username: str | None
     tz: str
-    mode: Mode = Mode.OFFICE
     active: bool = True
 
     @property
@@ -66,7 +53,6 @@ class Event:
     agenda: str | None = None
     reminders: list[int] = field(default_factory=list)  # за сколько минут напомнить (без 0)
     participant_ids: list[int] = field(default_factory=list)  # только для разовых
-    online_only: bool = False  # проводится только онлайн: ссылка всегда в карточке, без выбора офис/онлайн
 
     @property
     def is_recurring(self) -> bool:

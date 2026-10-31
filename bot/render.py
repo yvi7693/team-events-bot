@@ -88,7 +88,7 @@ def card_text(
         Повестка
         тест
 
-    Ниже — только если есть: кто опаздывает и (в сообщении о начале) ссылка на звонок.
+    Ниже — только если есть: кто опаздывает и ссылка на звонок.
     """
     icon, note = header.split("|", 1) if "|" in header else ("📅", "")
     first = f"{icon} <b>{escape(occ.event.title)}</b>" + (f" · {note}" if note else "")
@@ -146,8 +146,6 @@ def week_text(
         ev = occ.event
         mark = "🔁" if ev.is_recurring else "•"
         s = f"{mark} {fmt_time(occ.start, tz)}–{fmt_time(occ.end, tz)} {escape(ev.title)}"
-        if ev.online_only:
-            s += " 💻"
         if occ.moved:
             s += " <i>(перенесён)</i>"
         people = people_of.get(ev.id, [])
@@ -174,7 +172,6 @@ def event_summary(ev: Event, viewer_tz: str, next_occ: Occurrence | None, people
         tzs = sorted({u.tz for u in people} | {ev.tz})
         lines.append(f"🕙 {time_line(next_occ.start, next_occ.end, viewer_tz, tzs, now_ts())}")
     lines.append(f"🔁 {describe(ev)} · {fmt_duration(ev.duration_min)}")
-    lines.append("💻 только онлайн" if ev.online_only else "🏢 офис + онлайн")
     lines.append(f"👥 {'вся команда' if ev.is_recurring else _names(people)}")
     reminders = ", ".join(fmt_offset(m) for m in sorted(ev.reminders, reverse=True))
     lines.append(f"🔔 {reminders + ' и ' if reminders else ''}в момент начала")

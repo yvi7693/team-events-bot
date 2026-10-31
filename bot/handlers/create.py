@@ -34,7 +34,6 @@ class Wz(StatesGroup):
     days = State()
     when = State()
     duration = State()
-    format = State()
     participants = State()
     link = State()
     agenda = State()
@@ -47,7 +46,7 @@ class WzCb(CallbackData, prefix="wz"):
     v: str = ""
 
 
-STEPS = ["title", "kind", "days", "when", "duration", "format", "participants", "link", "agenda", "reminders"]
+STEPS = ["title", "kind", "days", "when", "duration", "participants", "link", "agenda", "reminders"]
 REMINDER_PRESETS = [1440, 180, 60, 30, 15, 10, 5]
 KIND_LABELS = {
     "single": "• Разовый",
@@ -87,7 +86,6 @@ def draft_to_event(d: dict, organizer: User, ev: Event | None = None) -> Event:
     new.agenda = d.get("agenda")
     new.reminders = sorted(d.get("reminders", []), reverse=True)
     new.participant_ids = [] if recurring else d.get("participants", [])
-    new.online_only = bool(d.get("online"))
     return new
 
 
@@ -104,7 +102,7 @@ def event_to_draft(ev: Event, start_ts: int) -> dict:
         "title": ev.title, "kind": kind, "weekdays": ev.weekdays, "interval": ev.interval_weeks,
         "start": from_ts(start_ts, ev.tz).isoformat(), "duration": ev.duration_min,
         "participants": ev.participant_ids, "url": ev.call_url, "agenda": ev.agenda,
-        "reminders": ev.reminders, "online": ev.online_only,
+        "reminders": ev.reminders,
     }
 
 
@@ -145,7 +143,7 @@ async def new_cmd(message: Message, command: CommandObject, state: FSMContext, s
     await state.update_data(
         organizer=user.id, title=p.title, kind=kind, weekdays=p.weekdays, interval=p.interval_weeks,
         start=p.start.isoformat(), duration=p.duration_min, participants=list(dict.fromkeys(participants)),
-        url=p.call_url, agenda=p.agenda, online=p.online,
+        url=p.call_url, agenda=p.agenda,
         reminders=logic.default_reminders(Kind.SINGLE if kind == "single" else Kind.RECURRING, p.weekdays),
     )
     if unknown:
@@ -188,19 +186,12 @@ async def ask(chat_id: int, step: str, state: FSMContext, svc: Service) -> None:
             [Btn(text=fmt_duration(m), callback_data=cb("dur", str(m))) for m in (15, 30, 45)],
             [Btn(text=fmt_duration(m), callback_data=cb("dur", str(m))) for m in (60, 90, 120)],
             cancel_row))
-    elif step == "format":
-        await send(chat_id, "Где проходит?", reply_markup=kb(
-            [Btn(text="🏢 Офис + онлайн", callback_data=cb("fmt", "hybrid"))],
-            [Btn(text="💻 Только онлайн", callback_data=cb("fmt", "online"))],
-            cancel_row))
     elif step == "participants":
         await send(chat_id, "Кто участвует? Отметь людей и нажми «Готово».\n"
                             "<i>Нет нужного человека — ему нужно нажать /start у бота.</i>",
                    reply_markup=participants_kb(d, await svc.db.team()))
     elif step == "link":
-        hint = ("Ссылка на звонок?" if d.get("online")
-                else "Ссылка на звонок? Она появится в карточке, если кто-то будет онлайн.")
-        await send(chat_id, hint,
+        await send(chat_id, "Ссылка на звонок? Она будет в каждом напоминании.",
                    reply_markup=kb([Btn(text="Без ссылки", callback_data=cb("link", "-"))], cancel_row))
     elif step == "agenda":
         await send(chat_id, "Повестка? (можно несколько строк)",
@@ -360,15 +351,6 @@ async def on_duration_text(message: Message, state: FSMContext, svc: Service) ->
         return
     await state.update_data(duration=dur)
     await advance(message.chat.id, "duration", state, svc)
-
-
-@router.callback_query(Wz.format, WzCb.filter(F.a == "fmt"))
-async def on_format(cq: CallbackQuery, callback_data: WzCb, state: FSMContext, svc: Service) -> None:
-    online = callback_data.v == "online"
-    await state.update_data(online=online)
-    await cq.message.edit_text("Формат: " + ("💻 только онлайн" if online else "🏢 офис + онлайн"))
-    await cq.answer()
-    await advance(cq.message.chat.id, "format", state, svc)
 
 
 @router.callback_query(Wz.participants, WzCb.filter(F.a.in_({"p", "p_ok"})))

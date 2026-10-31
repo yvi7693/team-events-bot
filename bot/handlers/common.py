@@ -13,7 +13,6 @@ from aiogram.types import (
     CallbackQuery, ChatMemberUpdated, InlineKeyboardButton as Btn, InlineKeyboardMarkup, Message, WebAppInfo,
 )
 
-from ..models import Mode
 from ..service import Service
 from ..web import WebServer
 from ..timeutil import COMMON_TZ, fmt_time, now_ts, resolve_tz, tz_label
@@ -30,13 +29,12 @@ HELP = """<b>Команды</b>
 /calendar — календарь
 /events — все ивенты
 /tz — часовой пояс
-/mode — офис или удалёнка по умолчанию
 /team — команда
 /cancel — прервать действие
 
 <b>Быстро одной строкой</b>
 <code>/new Дейли | 10:00 | 15м | по будням | ссылка</code>
-<code>/new Демо | пт 14:00 | 1ч | @anna @oleg | онлайн</code>
+<code>/new Демо | пт 14:00 | 1ч | @anna @oleg | Показ MVP</code>
 """
 
 
@@ -46,10 +44,6 @@ class Reg(StatesGroup):
 
 class TzCb(CallbackData, prefix="tz"):
     tz: str
-
-
-class ModeCb(CallbackData, prefix="mode"):
-    m: str
 
 
 def tz_keyboard() -> InlineKeyboardMarkup:
@@ -63,13 +57,6 @@ def tz_keyboard() -> InlineKeyboardMarkup:
         rows.append(row)
     rows.append([Btn(text="✍️ Другой", callback_data=TzCb(tz="manual").pack())])
     return InlineKeyboardMarkup(inline_keyboard=rows)
-
-
-def mode_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        Btn(text="🏢 Обычно в офисе", callback_data=ModeCb(m=Mode.OFFICE.value).pack()),
-        Btn(text="💻 Обычно удалённо", callback_data=ModeCb(m=Mode.REMOTE.value).pack()),
-    ]])
 
 
 async def deep_link_kb(bot: Bot, payload: str, text: str) -> InlineKeyboardMarkup:
@@ -176,26 +163,9 @@ async def tz_manual(message: Message, state: FSMContext, svc: Service) -> None:
 async def _set_tz(message: Message, uid: int, tz: str, svc: Service) -> None:
     await svc.db.update_user(uid, tz=tz)
     await message.answer(
-        f"Пояс: <b>{tz_label(tz)}</b> (у тебя {fmt_time(now_ts(), tz)}).\n\nГде ты обычно работаешь?",
-        reply_markup=mode_keyboard(),
+        f"Готово! Пояс: <b>{tz_label(tz)}</b> (у тебя {fmt_time(now_ts(), tz)}).\n\n"
+        "/new — создать ивент · /week — неделя · /help — все команды"
     )
-
-
-@router.message(Command("mode"))
-async def mode_cmd(message: Message, svc: Service) -> None:
-    user = await svc.db.get_user(message.from_user.id)
-    current = ""
-    if user:
-        current = "Сейчас: " + ("💻 удалённо" if user.mode == Mode.REMOTE else "🏢 в офисе") + "\n"
-    await message.answer(current + "Где ты обычно работаешь?", reply_markup=mode_keyboard())
-
-
-@router.callback_query(ModeCb.filter())
-async def mode_chosen(cb: CallbackQuery, callback_data: ModeCb, svc: Service) -> None:
-    await svc.db.update_user(cb.from_user.id, mode=callback_data.m)
-    label = "💻 удалённо" if callback_data.m == Mode.REMOTE.value else "🏢 в офисе"
-    await cb.message.edit_text(f"Готово! Обычно: <b>{label}</b>.\n\n/new — создать ивент · /week — неделя · /help — все команды")
-    await cb.answer()
 
 
 @router.message(Command("team"))
@@ -207,8 +177,7 @@ async def team_cmd(message: Message, svc: Service) -> None:
     now = now_ts()
     lines = ["<b>Команда</b>"]
     for u in team:
-        mode = "💻" if u.mode == Mode.REMOTE else "🏢"
-        lines.append(f"{mode} {escape(u.name)} — {tz_label(u.tz)}, {fmt_time(now, u.tz)}")
+        lines.append(f"• {escape(u.name)} — {tz_label(u.tz)}, {fmt_time(now, u.tz)}")
     await message.answer("\n".join(lines))
 
 

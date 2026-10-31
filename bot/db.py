@@ -7,7 +7,7 @@ import time as _time
 
 import aiosqlite
 
-from .models import Answer, Event, Kind, Mode, Occurrence, Override, Place, Rsvp, User
+from .models import Answer, Event, Kind, Occurrence, Override, Rsvp, User
 from .recurrence import expand
 
 SCHEMA = """
@@ -16,7 +16,6 @@ CREATE TABLE IF NOT EXISTS users (
     name TEXT NOT NULL,
     username TEXT,
     tz TEXT NOT NULL,
-    mode TEXT NOT NULL DEFAULT 'office',
     active INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS settings (
@@ -38,7 +37,6 @@ CREATE TABLE IF NOT EXISTS events (
     call_url TEXT,
     agenda TEXT,
     reminders TEXT NOT NULL DEFAULT '[]',
-    online_only INTEGER NOT NULL DEFAULT 0,
     deleted INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL
 );
@@ -59,7 +57,6 @@ CREATE TABLE IF NOT EXISTS rsvps (
     occ_key INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     status TEXT NOT NULL,
-    place TEXT,
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (event_id, occ_key, user_id)
 );
@@ -94,21 +91,7 @@ class Database:
         self.conn = await aiosqlite.connect(self.path)
         self.conn.row_factory = aiosqlite.Row
         await self.conn.executescript(SCHEMA)
-        await self._migrate()
         await self.conn.commit()
-
-    async def _migrate(self) -> None:
-        """Добавляет колонки, появившиеся после первого запуска."""
-        async with self.c.execute("PRAGMA table_info(events)") as cur:
-            cols = {r["name"] for r in await cur.fetchall()}
-        if "online_only" not in cols:
-            await self.c.execute("ALTER TABLE events ADD COLUMN online_only INTEGER NOT NULL DEFAULT 0")
-        async with self.c.execute("PRAGMA table_info(rsvps)") as cur:
-            cols = {r["name"] for r in await cur.fetchall()}
-        if "place" not in cols:
-            # раньше «в офисе / онлайн» были статусами — теперь это «буду» + место
-            await self.c.execute("ALTER TABLE rsvps ADD COLUMN place TEXT")
-            await self.c.execute("UPDATE rsvps SET place=status, status='yes' WHERE status IN ('office', 'online')")
 
     async def close(self) -> None:
         if self.conn:
@@ -141,7 +124,7 @@ class Database:
 
     @staticmethod
     def _user(row) -> User:
-        return User(row["id"], row["name"], row["username"], row["tz"], Mode(row["mode"]), bool(row["active"]))
+        return User(row["id"], row["name"], row["username"], row["tz"], active=bool(row["active"]))
 
     async def get_user(self, uid: int) -> User | None:
         async with self.c.execute("SELECT * FROM users WHERE id=?", (uid,)) as cur:
@@ -178,7 +161,6 @@ class Database:
             weekdays=json.loads(row["weekdays"]), interval_weeks=row["interval_weeks"],
             until_date=row["until_date"], call_url=row["call_url"], agenda=row["agenda"],
             reminders=json.loads(row["reminders"]), participant_ids=pids,
-            online_only=bool(row["online_only"]),
         )
 
     async def get_event(self, eid: int) -> Event | None:
@@ -194,11 +176,11 @@ class Database:
     async def create_event(self, ev: Event) -> Event:
         cur = await self.c.execute(
             """INSERT INTO events(title, kind, tz, start_date, start_time, duration_min, organizer_id,
-                                  weekdays, interval_weeks, until_date, call_url, agenda, reminders, online_only, created_at)
-               VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  weekdays, interval_weeks, until_date, call_url, agenda, reminders, created_at)
+               VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (ev.title, ev.kind.value, ev.tz, ev.start_date, ev.start_time, ev.duration_min, ev.organizer_id,
              json.dumps(ev.weekdays), ev.interval_weeks, ev.until_date, ev.call_url, ev.agenda,
-             json.dumps(ev.reminders), int(ev.online_only), int(_time.time())),
+             json.dumps(ev.reminders), int(_time.time())),
         )
         ev.id = cur.lastrowid
         await self._save_participants(ev)
@@ -208,10 +190,9 @@ class Database:
     async def save_event(self, ev: Event) -> None:
         await self.c.execute(
             """UPDATE events SET title=?, tz=?, start_date=?, start_time=?, duration_min=?, weekdays=?,
-                   interval_weeks=?, until_date=?, call_url=?, agenda=?, reminders=?, online_only=? WHERE id=?""",
+                   interval_weeks=?, until_date=?, call_url=?, agenda=?, reminders=? WHERE id=?""",
             (ev.title, ev.tz, ev.start_date, ev.start_time, ev.duration_min, json.dumps(ev.weekdays),
-             ev.interval_weeks, ev.until_date, ev.call_url, ev.agenda, json.dumps(ev.reminders),
-             int(ev.online_only), ev.id),
+             ev.interval_weeks, ev.until_date, ev.call_url, ev.agenda, json.dumps(ev.reminders), ev.id),
         )
         await self._save_participants(ev)
         await self.c.commit()
@@ -290,21 +271,20 @@ class Database:
 
     async def set_answer(self, eid: int, key: int, uid: int, answer: Answer) -> None:
         await self.c.execute(
-            """INSERT INTO rsvps(event_id, occ_key, user_id, status, place, updated_at) VALUES(?, ?, ?, ?, ?, ?)
+            """INSERT INTO rsvps(event_id, occ_key, user_id, status, updated_at) VALUES(?, ?, ?, ?, ?)
                ON CONFLICT(event_id, occ_key, user_id)
-               DO UPDATE SET status=excluded.status, place=excluded.place, updated_at=excluded.updated_at""",
-            (eid, key, uid, answer.status.value, answer.place.value if answer.place else None, int(_time.time())),
+               DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at""",
+            (eid, key, uid, answer.status.value, int(_time.time())),
         )
         await self.c.commit()
 
     async def rsvps(self, eid: int, key: int) -> dict[int, Answer]:
         async with self.c.execute(
-            "SELECT user_id, status, place FROM rsvps WHERE event_id=? AND occ_key=?", (eid, key)
+            "SELECT user_id, status FROM rsvps WHERE event_id=? AND occ_key=?", (eid, key)
         ) as cur:
-            return {
-                r["user_id"]: Answer(Rsvp(r["status"]), Place(r["place"]) if r["place"] else None)
-                for r in await cur.fetchall()
-            }
+            rows = await cur.fetchall()
+        # старые ответы («в офисе», «онлайн» и т.п.) больше ничего не значат — пропускаем
+        return {r["user_id"]: Answer(Rsvp(r["status"])) for r in rows if r["status"] in Rsvp._value2member_map_}
 
     # ---------- sent log ----------
 

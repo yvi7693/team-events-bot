@@ -11,7 +11,7 @@ from bot.db import Database
 from bot.service import Service
 from bot.handlers import common, create, events
 from bot import scheduler
-from bot.models import Answer, Place, Rsvp
+from bot.models import Answer, Rsvp
 
 mid = itertools.count(1000)
 LOG = []
@@ -87,7 +87,7 @@ async def _flow(db):
     await F(added_to_group(777))
     assert await db.team_chat_id() is None
     for u, tz in ((1,"Europe/Moscow"),(2,"Europe/Berlin")):
-        await F(msg(u, "/start")); await F(cb(u, f"tz:{tz}")); await F(cb(u, "mode:remote" if u==2 else "mode:office"))
+        await F(msg(u, "/start")); await F(cb(u, f"tz:{tz}"))
     assert (await db.get_user(2)).tz == "Europe/Berlin"
     # участник команды добавил бота — чат стал командным, команды в нём не работают
     await F(added_to_group(1))
@@ -100,7 +100,7 @@ async def _flow(db):
     # мастер: разовый
     await F(msg(1, "/new")); await F(msg(1, "Демо заказчику"))
     await F(cb(1, "wz:kind:single")); await F(msg(1, "завтра 15:00"))
-    await F(cb(1, "wz:dur:60")); await F(cb(1, "wz:fmt:hybrid")); await F(cb(1, "wz:p:2")); await F(cb(1, "wz:p_ok:"))
+    await F(cb(1, "wz:dur:60")); await F(cb(1, "wz:p:2")); await F(cb(1, "wz:p_ok:"))
     await F(msg(1, "https://zoom.us/j/1")); await F(msg(1, "Показ MVP"))
     await F(cb(1, "wz:rem_ok:"))
     await F(cb(1, "wz:save:"))

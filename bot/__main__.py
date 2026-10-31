@@ -27,7 +27,6 @@ COMMANDS = [
     BotCommand(command="calendar", description="Календарь"),
     BotCommand(command="events", description="Все ивенты"),
     BotCommand(command="tz", description="Мой часовой пояс"),
-    BotCommand(command="mode", description="Офис / удалёнка по умолчанию"),
     BotCommand(command="team", description="Команда"),
     BotCommand(command="help", description="Справка"),
     BotCommand(command="cancel", description="Отменить текущее действие"),

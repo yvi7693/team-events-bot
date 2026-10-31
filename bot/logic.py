@@ -1,10 +1,10 @@
-"""Бизнес-правила: участники, напоминания, конфликты, удалёнка."""
+"""Бизнес-правила: участники, напоминания, конфликты."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .models import Answer, Event, Kind, Mode, Occurrence, Place, Rsvp, User
+from .models import Answer, Event, Kind, Occurrence, Rsvp, User
 
 CONFLICT_HORIZON_DAYS = 28  # на сколько вперёд проверять пересечения у регулярных
 
@@ -50,29 +50,11 @@ def can_delete(ev: Event, user_id: int) -> bool:
     return user_id == ev.organizer_id
 
 
-def is_remote(user: User, answer: Answer | None) -> bool:
-    """Место из ответа важнее режима из профиля."""
-    if answer and answer.status == Rsvp.NO:
-        return False
-    if answer and answer.place:
-        return answer.place == Place.ONLINE
-    return user.mode == Mode.REMOTE
-
-
-def anyone_remote(users: list[User], answers: dict[int, Answer]) -> bool:
-    return any(is_remote(u, answers.get(u.id)) for u in users)
-
-
-def show_link(ev: Event, users: list[User], answers: dict[int, Answer]) -> bool:
-    return ev.online_only or anyone_remote(users, answers)
-
-
 def toggle_late(current: Answer | None) -> Answer:
-    """Единственная кнопка ответа — «Опоздаю»: повторное нажатие отменяет. Место (офис/онлайн) не трогаем."""
-    place = current.place if current else None
+    """Единственная кнопка ответа — «Опоздаю»: повторное нажатие отменяет."""
     if current and current.status == Rsvp.LATE:
-        return Answer(Rsvp.YES, place)
-    return Answer(Rsvp.LATE, place)
+        return Answer(Rsvp.YES)
+    return Answer(Rsvp.LATE)
 
 
 @dataclass

@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from bot import logic
-from bot.models import Answer, Event, Kind, Mode, Occurrence, Override, Place, Rsvp, User
+from bot.models import Answer, Event, Kind, Occurrence, Override, Rsvp, User
 from bot.quickparse import ParseError, parse_line, parse_recurrence
 from bot.recurrence import describe, expand
 from bot.scheduler import due_offsets
@@ -153,17 +153,6 @@ def test_participants():
     assert logic.can_delete(single(), 1) and not logic.can_delete(single(), 2)
 
 
-def test_remote_detection():
-    office = User(1, "A", None, MSK, Mode.OFFICE)
-    remote = User(2, "B", None, MSK, Mode.REMOTE)
-    assert not logic.anyone_remote([office], {})
-    assert logic.anyone_remote([office], {1: Answer(Rsvp.YES, Place.ONLINE)})   # место из ответа важнее профиля
-    assert logic.anyone_remote([remote], {})
-    assert not logic.anyone_remote([remote], {2: Answer(Rsvp.YES, Place.OFFICE)})
-    assert logic.anyone_remote([remote], {2: Answer(Rsvp.LATE)})               # опоздает, но всё ещё из дома
-    assert not logic.anyone_remote([remote], {2: Answer(Rsvp.NO, Place.ONLINE)})
-
-
 def test_conflicts():
     ev_new = single(id=10, start_date="2026-11-05", start_time="10:05", participant_ids=[1, 3])
     cand = expand(ev_new, 0, 2**40)
@@ -193,21 +182,9 @@ def test_due_offsets():
     assert due_offsets(occ, start + 20 * 60) == []             # опоздали больше чем на GRACE — молчим
 
 
-def test_quick_online():
-    d = parse_line("Синк | чт 12:00 | 30м | онлайн | https://meet.google.com/x", MSK, NOW)
-    assert d.online and d.call_url == "https://meet.google.com/x" and d.agenda is None
-
-
 def test_toggle_late():
     assert logic.toggle_late(None) == Answer(Rsvp.LATE)
     assert logic.toggle_late(Answer(Rsvp.LATE)) == Answer(Rsvp.YES)                     # повторное нажатие отменяет
-    assert logic.toggle_late(Answer(Rsvp.YES, Place.ONLINE)) == Answer(Rsvp.LATE, Place.ONLINE)  # место сохраняется
-
-
-def test_online_only_always_shows_link():
-    office = User(1, "A", None, MSK, Mode.OFFICE)
-    assert logic.show_link(single(online_only=True), [office], {})
-    assert not logic.show_link(single(), [office], {})
 
 
 def test_whole_team():
